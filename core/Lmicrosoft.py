@@ -2,29 +2,10 @@ import requests
 import time
 import webbrowser
 import json
-import os
-from pathlib import Path
+import base64
+import uuid
 
-CLIENT_ID = "暂时保密，暂未做加密部分"
-TOKEN_FILE = Path("./refresh_token.json")
-
-def load_refresh_token():
-    try:
-        if TOKEN_FILE.exists():
-            with open(TOKEN_FILE, "r") as f:
-                data = json.load(f)
-            return data.get("refresh_token")
-    except:
-        return None
-
-def save_refresh_token(refresh_token):
-    try:
-        with open(TOKEN_FILE, "w") as f:
-            json.dump({"refresh_token": refresh_token}, f)
-        os.chmod(TOKEN_FILE, 0o600)
-    except:
-        print("保存刷新令牌失败")
-        return
+CLIENT_ID = "13499bdf-784c-4123-a1d8-6b33a6c7004a"
 
 def get_device_code():
     resp = requests.post(
@@ -40,7 +21,7 @@ def get_device_code():
     return resp.json()
 
 def poll_for_token(device_data):
-    print("等待授权...")
+    print("等待授权...（按 Ctrl+C 可取消）")
     while True:
         time.sleep(5)
         resp = requests.post(
@@ -52,7 +33,7 @@ def poll_for_token(device_data):
             }
         )
         if resp.status_code == 200:
-            print("获取OAuth令牌成功")
+            print("成功获取 OAuth 令牌！")
             return resp.json()
         elif resp.status_code == 400:
             error = resp.json().get("error")
@@ -60,13 +41,14 @@ def poll_for_token(device_data):
                 print(".", end="", flush=True)
                 continue
             elif error == "slow_down":
+                print("\n请求过频繁，等待 10 秒...")
                 time.sleep(10)
                 continue
             else:
-                print("轮询错误:", resp.text)
+                print("\n轮询错误:", resp.text)
                 return None
         else:
-            print("请求令牌失败:", resp.text)
+            print("\n请求令牌失败:", resp.text)
             return None
 
 def xbox_live_auth(access_token):
@@ -83,7 +65,7 @@ def xbox_live_auth(access_token):
     }
     resp = requests.post(url, headers=headers, json=payload)
     if resp.status_code != 200:
-        print("Xbox Live认证失败:", resp.text)
+        print("Xbox Live 认证失败:", resp.text)
         return None
     data = resp.json()
     return {
@@ -104,7 +86,7 @@ def xsts_auth(xbox_token):
     }
     resp = requests.post(url, headers=headers, json=payload)
     if resp.status_code != 200:
-        print("XSTS认证失败:", resp.text)
+        print("XSTS 认证失败:", resp.text)
         return None
     return resp.json()["Token"]
 
@@ -116,7 +98,9 @@ def minecraft_auth(xsts_token, user_hash):
     }
     resp = requests.post(url, headers=headers, json=payload)
     if resp.status_code != 200:
-        print("Minecraft认证失败:", resp.text)
+        print("Minecraft 认证失败:", resp.text)
+        if "403" in resp.text or "Forbidden" in resp.text:
+            print("提示：你的应用可能未获得 Minecraft API 权限，请提交审核表单 https://aka.ms/mce-reviewappid")
         return None
     data = resp.json()
     access_token = data["access_token"]
@@ -131,69 +115,39 @@ def minecraft_auth(xsts_token, user_hash):
     return {
         "access_token": access_token,
         "uuid": profile["id"],
-        "name": profile["name"],
-        "refresh_token": data.get("refresh_token")
+        "name": profile["name"]
     }
 
 def main():
-    refresh_token = load_refresh_token()
-    if refresh_token:
-        print("尝试使用刷新令牌自动登录...")
-        try:
-            resp = requests.post(
-                "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
-                data={
-                    "client_id": CLIENT_ID,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "scope": "XboxLive.signin offline_access"
-                }
-            )
-            if resp.status_code == 200:
-                token_data = resp.json()
-                oauth_access_token = token_data["access_token"]
-                new_refresh = token_data.get("refresh_token")
-                if new_refresh:
-                    save_refresh_token(new_refresh)
-                xbox_result = xbox_live_auth(oauth_access_token)
-                if xbox_result:
-                    xsts = xsts_auth(xbox_result["token"])
-                    if xsts:
-                        mc_result = minecraft_auth(xsts, xbox_result["user_hash"])
-                        if mc_result:
-                            print(f"自动登录成功！玩家: {mc_result['name']}, UUID: {mc_result['uuid']}")
-                            return
-        except:
-            pass
-        print("刷新令牌无效，进行完整登录")
-
     device_data = get_device_code()
     if not device_data:
         return
     print(f"\n请访问 {device_data['verification_uri']} 并输入代码: {device_data['user_code']}")
     webbrowser.open(device_data['verification_uri'])
+    
     oauth_data = poll_for_token(device_data)
     if not oauth_data:
         return
-    oauth_access_token = oauth_data["access_token"]
-    if "refresh_token" in oauth_data:
-        save_refresh_token(oauth_data["refresh_token"])
-
-    xbox_result = xbox_live_auth(oauth_access_token)
+    access_token = oauth_data["access_token"]
+    
+    xbox_result = xbox_live_auth(access_token)
     if not xbox_result:
         return
-    xsts = xsts_auth(xbox_result["token"])
-    if not xsts:
+    xbox_token = xbox_result["token"]
+    user_hash = xbox_result["user_hash"]
+    
+    xsts_token = xsts_auth(xbox_token)
+    if not xsts_token:
         return
-    mc_result = minecraft_auth(xsts, xbox_result["user_hash"])
-    if mc_result:
-        print(f"\n登录成功！")
-        print(f"玩家名: {mc_result['name']}")
-        print(f"UUID:   {mc_result['uuid']}")
-        if mc_result.get("refresh_token"):
-            save_refresh_token(mc_result["refresh_token"])
-    else:
-        print("登录失败，请检查应用是否已获得Minecraft API权限。")
+    
+    minecraft_result = minecraft_auth(xsts_token, user_hash)
+    if not minecraft_result:
+        return
+    
+    print("\n登录成功！")
+    print(f"   玩家名: {minecraft_result['name']}")
+    print(f"   UUID:   {minecraft_result['uuid']}")
+    print(f"   Access Token: {minecraft_result['access_token'][:20]}...")
 
 if __name__ == "__main__":
     main()
