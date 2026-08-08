@@ -50,5 +50,6 @@ GUI层只调用底层接口，禁止直接改动底层启动内核
 ---
 ### 同源项目
 `正在持续维护的项目...`
+`（主仓库为Gitee，链接导入进Gitee而非GitHub,但是两端仓库共用一套README请谅解）`
 - **[CleanSlate](https://gitee.com/nuln-studio/CleanSlate)** - C盘清理工具
 - **[GraphVein](https://gitee.com/nuln-studio/graph-vein)** - 树形逻辑导图编辑器
