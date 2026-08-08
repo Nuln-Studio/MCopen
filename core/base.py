@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 
 MCO_RUNTIME = datetime.now().isoformat()
-MCO_CONTENT = "抄袭私募轻矿778" + "_" + str(MCO_RUNTIME)
+MCO_CONTENT = "抄袭私募零阑778" + "_" + str(MCO_RUNTIME)
 MCO_ENCODED = base64.b64encode(MCO_CONTENT.encode()).decode()
 
 def safe_write_text(file_path: Path, content: str):
